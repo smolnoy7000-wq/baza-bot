@@ -1,0 +1,77 @@
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode-terminal')const fs = require('fs');
+
+const DB_FILE = './orders.json';
+
+// Функция загрузки заказов
+function loadOrders() {
+    if (!fs.existsSync(DB_FILE)) return [];
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    } catch (e) {
+        return [];
+    }
+}
+
+// Функция сохранения заказов
+function saveOrders(orders) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(orders, null, 2));
+}
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection } = update;
+        if (connection === 'open') {
+            console.log('✅ WhatsApp бот успешно подключен и запущен!');
+        }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const m = messages[0];
+        if (!m.message || m.key.fromMe) return;
+
+        const remoteJid = m.key.remoteJid;
+        if (!remoteJid.endsWith('@g.us')) return; // Только группы
+
+        const text = m.message.conversation || m.message.extendedTextMessage?.text || '';
+        const textLower = text.toLowerCase();
+        let orders = loadOrders();
+
+        // Проверка на возврат ("забрал" или "вернул" через Reply)
+        const quoted = m.message.extendedTextMessage?.contextInfo;
+        if (quoted && (textLower.includes('забрал') || textLower.includes('вернул'))) {
+            let activeOrder = orders.find(o => o.remoteJid === remoteJid && o.status === 'active');
+            if (activeOrder) {
+                activeOrder.status = 'returned';
+                saveOrders(orders);
+                await sock.sendMessage(remoteJid, { text: '✅ Товар успешно отмечен как возвращенный!' }, { quoted: m });
+            } else {
+                await sock.sendMessage(remoteJid, { text: '⚠️ Активный заказ для закрытия не найден.' }, { quoted: m });
+            }
+            return;
+        }
+
+        // Новый заказ (если есть телефон или ключевые слова)
+        if (text.includes('+7') || textLower.includes('трамбовка') || textLower.includes('бензин')) {
+            orders.push({
+                id: Date.now(),
+                remoteJid: remoteJid,
+                text: text,
+                status: 'active'
+            });
+            saveOrders(orders);
+            await sock.sendMessage(remoteJid, { text: '📋 Заказ принят в систему! Товар записан как находящийся в аренде.' }, { quoted: m });
+        }
+    });
+}
+
+startBot();

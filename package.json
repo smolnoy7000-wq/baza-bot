@@ -6,7 +6,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "6.7.24",
     "express": "^4.21.2",
     "qrcode-terminal": "^0.12.0"
   }

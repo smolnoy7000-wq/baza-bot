@@ -1,0 +1,10 @@
+node_modules/
+auth_info_baileys/
+orders.json
+orders_backup.json
+*.backup
+*.old
+*.zip
+index2.js
+index2_backup.js
+index.jx
